@@ -12,7 +12,7 @@ from tkinter import ttk
 from tkinter import filedialog
 
 
-# Function to upload files from th
+# Function to upload files selected by the user
 def upload():
     global filepath
     filepath = filedialog.askopenfilename(initialdir="/", title="Select A XTF File", filetypes=(("XTF files", "*.xtf"),("all files", "*.*")))
@@ -30,7 +30,7 @@ def plot_data(window):
     figure = Figure(figsize=(12, 5), dpi=100)
 
     ax1 = figure.add_subplot(1, 2, 1)
-    ax1.imshow(np_chan1, extent=[0, 9557,0,2400], cmap='gray', aspect='auto', vmin=0, vmax= np.percentile(np_chan1[:,0:200], 99))#, vmax=np.log10(upper_limit))
+    ax1.imshow(port_chan, cmap='gray', aspect='auto', vmin=0, vmax= np.percentile(port_chan, 99))
     ax1.set_title('Raw Port channel data')
     ax1.set_xlabel('Along-track distance [m]')
     ax1.set_ylabel('Across-track distance [m]')
@@ -60,7 +60,6 @@ def display_data_window():
         widget.destroy()
     
     # Read file header and packets
-    #test_path = 'SF Mosaic July 6, 2007 line-0004.xtf'
     (fh, p) = xtf_read(filepath)
     n_channels = fh.channel_count(verbose=True)
     actual_chan_info = [fh.ChanInfo[i] for i in range(0, n_channels)]
