@@ -1,44 +1,137 @@
 import numpy as np
 from scipy.interpolate import CubicSpline, interp1d
-from scipy.signal import medfilt, find_peaks
+from scipy.signal import medfilt, find_peaks, savgol_filter, resample
+from scipy.integrate import cumtrapz
 from pyproj import Proj
 import seaborn as sns
 from matplotlib.colors import ListedColormap
+from pyxtf import xtf_read, concatenate_channel, XTFHeaderType
+from tqdm import tqdm
 
 '''
 SSS functions
 '''
 
+def load_data(path, resampling):
+    total_pings = 0
+    pings_per_file = np.zeros((len(path)+1,1))
+    for file_number in range(len(path)):
+        (fh, p) = xtf_read(path[file_number])
+        '''
+        n_channels = fh.channel_count(verbose=True)
+        for i in range(0, n_channels):
+            actual_chan_info = fh.ChanInfo[i]
+            if 'Port' in str(actual_chan_info.ChannelName):
+                total_pings += actual_chan_info.Reserved
+                pings_per_file[file_number+1] = actual_chan_info.Reserved
+                break
+            else:
+                continue
+        '''
+        total_pings += len(p[XTFHeaderType.sonar])
+        pings_per_file[file_number+1] = len(p[XTFHeaderType.sonar])
+    max_no_pings = int(np.max(pings_per_file))
+    # Creating matrixes for future use
+    port_chan = np.full((resampling, max_no_pings, len(path)), -999,
+                         dtype=np.float64)
+    stbd_chan = np.full(port_chan.shape, -999, dtype=np.float64)
+    sonar_altitude = np.full((max_no_pings, len(path)), -999, dtype=np.float64)
+    slant_port = np.full(sonar_altitude.shape, -999, dtype=np.float64)
+    slant_stbd = np.full(sonar_altitude.shape, -999, dtype=np.float64)
+    sensor_pitch = np.full(port_chan.shape, -999, dtype=np.float64)
+    Xposition = np.full(sonar_altitude.shape, -999, dtype=np.float64)
+    Yposition = np.full(sonar_altitude.shape, -999, dtype=np.float64)
+    sensor_heading = np.full(sonar_altitude.shape, -999, dtype=np.float64)
+    sensor_speed = np.full(sonar_altitude.shape, -999, dtype=np.float64)
+    ship_gyro = np.full(sonar_altitude.shape, -999, dtype=np.float64)
+    layback = np.full(port_chan.shape, -999, dtype=np.float64)
+    average_port = np.zeros((1, len(path)))
+    average_stbd = np.zeros((1, len(path)))
+    
+    for file_number in range(len(path)):
+        # Read file header and packets
+        (fh, p) = xtf_read(path[file_number])
+        
+        # --------------------------- Get sonar data -------------------------- 
+        np_chan1 = concatenate_channel(p[XTFHeaderType.sonar], file_header=fh, channel=0, weighted=True).astype(float)
+        np_chan2 = concatenate_channel(p[XTFHeaderType.sonar], file_header=fh, channel=1, weighted=True).astype(float)
+        
+        upper_limit1 = np.percentile(np_chan1, 99)
+        upper_limit2 = np.percentile(np_chan2, 99)
+        # Clip to range (max cannot be used due to outliers)
+        np_chan1.clip(0, upper_limit1 - 1, out=np_chan1)
+        np_chan2.clip(0, upper_limit2 - 1, out=np_chan2)
+        
+        # Transpose so that the largest axis is horizontal
+        # np_chan1 = np_chan1 if np_chan1.shape[0] < np_chan1.shape[1] else np_chan1.T
+        # np_chan2 = np_chan2 if np_chan2.shape[0] < np_chan2.shape[1] else np_chan2.T
+        np_chan1 = np_chan1.T
+        np_chan2 = np_chan2.T
+        
+        # Resampling data and finding first backscatter value of each ping
+        port_chan[:,:int(pings_per_file[file_number+1]),file_number] = abs(resample(np_chan1, resampling, axis = 0, window=2))
+        stbd_chan[:,:int(pings_per_file[file_number+1]),file_number] = abs(resample(np_chan2, resampling, axis = 0, window=2))
+
+        average_port[0, file_number] = np.mean(np_chan1)
+        average_stbd[0, file_number] = np.mean(np_chan2)
+        '''
+        Los valores de las variables siguientes se pueden incluir en el loop
+        de max_no_pings para evitar crear matrices al comienzo, ya que igual
+        se itera entre columnas y files
+        '''
+        sonar_altitude[max_no_pings - int(pings_per_file[file_number+1]):,file_number] = [ping.SensorPrimaryAltitude for ping in p[XTFHeaderType.sonar]]
+        Xposition[max_no_pings - int(pings_per_file[file_number+1]):,file_number] = [ping.ShipXcoordinate for ping in p[XTFHeaderType.sonar]]
+        Yposition[max_no_pings - int(pings_per_file[file_number+1]):,file_number] = [ping.ShipYcoordinate for ping in p[XTFHeaderType.sonar]]
+        ship_gyro[max_no_pings - int(pings_per_file[file_number+1]):,file_number] = [ping.ShipGyro for ping in p[XTFHeaderType.sonar]]
+        sensor_speed[max_no_pings - int(pings_per_file[file_number+1]):,file_number] = [ping.SensorSpeed for ping in p[XTFHeaderType.sonar]]
+        sensor_heading[max_no_pings - int(pings_per_file[file_number+1]):,file_number] = [ping.SensorHeading for ping in p[XTFHeaderType.sonar]]
+        
+        slant_port[:int(pings_per_file[file_number+1]),file_number] = [ping.ping_chan_headers[0].SlantRange for ping in p[XTFHeaderType.sonar]]
+        slant_stbd[:int(pings_per_file[file_number+1]),file_number] = [ping.ping_chan_headers[1].SlantRange for ping in p[XTFHeaderType.sonar]]
+    sonar_altitude = np.flip(sonar_altitude, axis=0)
+    Xposition = np.flip(Xposition, axis=0)
+    Yposition = np.flip(Yposition, axis=0)
+    ship_gyro = np.flip(ship_gyro, axis=0)
+    sensor_speed = np.flip(sensor_speed, axis=0)
+    sensor_heading = np.flip(sensor_heading, axis=0)
+    return sonar_altitude, Xposition, Yposition, ship_gyro, sensor_speed, sensor_heading, layback, slant_port, slant_stbd, pings_per_file, port_chan, stbd_chan
+
 def stbd_and_port_data(filepath, port_channel, stbd_channel, resampling,
                        file_number, max_no_pings, pings_per_file, slant_port,
-                       slant_stbd, sonar_altitude):
+                       slant_stbd, sonar_altitude, tracking_method,
+                       blanking, threshold, duration):
     #matrices for future use
     new_port_channel = np.zeros((resampling, max_no_pings, len(filepath)))
     new_stbd_channel = np.zeros((resampling, max_no_pings, len(filepath)))
-    first_port_index = np.zeros((max_no_pings, len(filepath)))
     first_stbd_index = np.zeros((max_no_pings, len(filepath)))
     average_port = np.zeros((1, len(filepath)))
     average_stbd = np.zeros((1, len(filepath)))
     
-    port_channel_agc = np.zeros((resampling, max_no_pings, len(filepath)))
-    stbd_channel_agc = np.zeros((resampling, max_no_pings, len(filepath)))
     port_channel_median = np.zeros((resampling, max_no_pings, len(filepath)))
     stbd_channel_median = np.zeros((resampling, max_no_pings, len(filepath)))
     
     for file_number in range(len(filepath)):
-        for i in range(0, max_no_pings):
-            print('iteration of max no pings', i)
+        for i in tqdm(range(max_no_pings)):
             if i >= pings_per_file[file_number+1]:
                 pass
             else:
                 # The peak amplitude should be defined by the user in the future
-                port_peaks, _ = find_peaks(port_channel[(3*resampling)//4::, i, file_number], height=1.8)
-                first_port_index[i, file_number] = port_peaks[len(port_peaks)-1] + (3*resampling)//4 + 1
-                    
-                stbd_peaks, _ = find_peaks(stbd_channel[1:resampling//4, i, file_number], height=1.9)
+                if tracking_method == 1:
+                    #Function to automatically find the bottom
+                    port_peaks, _ = find_peaks(port_channel[(resampling)//2::, i, file_number], height=500)#1.8)
+                    stbd_peaks, _ = find_peaks(stbd_channel[1:resampling//2, i, file_number], height=500)#1.9)
+                    first_port_index = port_peaks[-1] + (3*resampling)//4
+                else:
+                    #Function using user-assigned value for bottom tracking
+                    start = int(blanking * resampling / slant_port[i, file_number])
+                    interval = int(duration * resampling / slant_port[i, file_number])
+                    port_peaks, _ = find_peaks(port_channel[resampling-start-interval:resampling-start, i, file_number], height=threshold)
+                    stbd_peaks, _ = find_peaks(stbd_channel[start:start+interval, i, file_number], height=threshold)
+                    first_port_index = port_peaks[-1] + resampling-start-interval
+                
                 first_stbd_index[i, file_number] = stbd_peaks[0]
                 
-                slant_range_port = (resampling - np.arange(0, int(first_port_index[i, file_number])+1)) * slant_port[i, file_number] / resampling
+                slant_range_port = (resampling - np.arange(0, int(first_port_index)+1)) * slant_port[i, file_number] / resampling
                 slant_range_stbd = np.arange(int(first_stbd_index[i, file_number]), resampling) * slant_stbd[i, file_number] / resampling
                 horizontal_range_port = np.sqrt(np.square(slant_range_port)-np.square(sonar_altitude[i, file_number]))
                 horizontal_range_stbd = np.sqrt(np.square(slant_range_stbd)-np.square(sonar_altitude[i, file_number]))
@@ -46,14 +139,14 @@ def stbd_and_port_data(filepath, port_channel, stbd_channel, resampling,
                 try:
                     last_index = np.nonzero(np.nan_to_num(horizontal_range_port, nan=-999) == -999)
                     new_index = resampling - (horizontal_range_port[:last_index[0][0]] // (slant_port[i, file_number]/resampling)).astype(int)
-                    if new_index[new_index.size-1] == resampling:
-                        new_index[new_index.size-1] = resampling-1
+                    if new_index[-1] == resampling:
+                        new_index[-1] = resampling-1
                     new_port_channel[new_index, i, file_number] = port_channel[np.arange(0, last_index[0][0]),i, file_number]
                 except IndexError:
                     new_index = resampling - (horizontal_range_port // (slant_port[i, file_number]/resampling)).astype(int)
                     if new_index[new_index.size-1] == resampling:
                         new_index[new_index.size-1] = resampling-1
-                    new_port_channel[new_index, i, file_number] = port_channel[np.arange(0, int(first_port_index[i, file_number])+1),i, file_number]
+                    new_port_channel[new_index, i, file_number] = port_channel[np.arange(0, int(first_port_index)+1),i, file_number]
                 port_non_zeros = np.nonzero(new_port_channel[:,i, file_number] != 0)
                 port_values = new_port_channel[port_non_zeros[0], i, file_number]
                 first_index_port = port_non_zeros[0][0]
@@ -64,69 +157,46 @@ def stbd_and_port_data(filepath, port_channel, stbd_channel, resampling,
                 try:
                     first_index = np.nonzero(np.nan_to_num(horizontal_range_stbd, nan=-999) == -999)
                     new_index = (horizontal_range_stbd[first_index[0][first_index[0].size-1]+1:] // (slant_stbd[i, file_number]/resampling)).astype(int)
-                    if new_index[new_index.size-1] == resampling:
-                        new_index[new_index.size-1] = resampling-1
+                    if new_index[-1] == resampling:
+                        new_index[-1] = resampling-1
                     new_stbd_channel[new_index, i, file_number] = stbd_channel[np.arange(first_index[0][first_index[0].size-1]+1+int(first_stbd_index[i, file_number]), resampling),i, file_number]
                 except IndexError:
                     new_index = (horizontal_range_stbd // (slant_stbd[i, file_number]/resampling)).astype(int)
-                    if new_index[new_index.size-1] == resampling:
-                        new_index[new_index.size-1] = resampling-1
+                    if new_index[-1] == resampling:
+                        new_index[-1] = resampling-1
                     new_stbd_channel[new_index, i, file_number] = stbd_channel[np.arange(int(first_stbd_index[i, file_number]), resampling),i, file_number]
                 stbd_non_zeros = np.nonzero(new_stbd_channel[:,i, file_number] != 0)
                 stbd_values = new_stbd_channel[stbd_non_zeros[0], i, file_number]
                 first_index_stbd = stbd_non_zeros[0][0]
                 last_index_stbd = stbd_non_zeros[0][stbd_non_zeros[0].size-1]+1
                 new_stbd_channel[first_index_stbd:last_index_stbd,i,file_number] = interp1d(stbd_non_zeros[0], stbd_values)(np.arange(first_index_stbd, last_index_stbd))
-            
-        average_port[0, file_number] = np.mean(new_port_channel[:,:int(pings_per_file[file_number+1]), file_number])
-        average_stbd[0, file_number] = np.mean(new_stbd_channel[:,:int(pings_per_file[file_number+1]), file_number])
-        for i in range(0, max_no_pings):
-            print('second iteration of max no pings', i)
-            if i >= pings_per_file[file_number+1]:
-                pass
-            else:
-                #Gains
-                port_channel_agc[:, i, file_number] = Automatic_Gain_Control(new_port_channel[:,i, file_number], 151, average_port[0, file_number], first_index_port, last_index_port)
-                stbd_channel_agc[:, i, file_number] = Automatic_Gain_Control(new_stbd_channel[:,i, file_number], 151, average_stbd[0, file_number], first_index_stbd, last_index_stbd)
-                port_channel_median[first_index_port:last_index_port, i, file_number] = Median_filter(new_port_channel[first_index_port:last_index_port, i, file_number], 201, average_port[0, file_number])
-                stbd_channel_median[first_index_stbd:last_index_stbd, i, file_number] = Median_filter(new_stbd_channel[first_index_stbd:last_index_stbd, i, file_number], 201, average_stbd[0, file_number])
-    return new_port_channel, new_stbd_channel, port_channel_agc, stbd_channel_agc, port_channel_median, stbd_channel_median
+                
+                first_value_port = new_port_channel[np.nonzero(new_port_channel[(3*resampling)//4:, i, file_number])[0][-1] + (3*resampling)//4, i, file_number]
+                first_value_stbd = new_stbd_channel[np.nonzero(new_stbd_channel[:resampling//4, i, file_number])[0][0], i, file_number]
+                
+                port_length = resampling - (np.nonzero(new_port_channel[(3*resampling)//4:, i, file_number])[0][-1] + (3*resampling)//4)
+                stbd_length = np.nonzero(new_stbd_channel[:resampling//4, i, file_number])[0][0]
+                total_length = port_length + stbd_length
+                
+                new_port_channel[np.nonzero(new_port_channel[(3*resampling)//4:,i,file_number])[0][-1] + (3*resampling)//4 + 1:, i, file_number] = interp1d([0, total_length], [first_value_port, first_value_stbd])(np.arange(1, port_length))
+                new_stbd_channel[:np.nonzero(new_stbd_channel[:resampling//4, i, file_number])[0][0], i, file_number] = interp1d([0, total_length], [first_value_port, first_value_stbd])(np.arange(port_length, total_length))
+        
+    return new_port_channel, new_stbd_channel, port_channel_median, stbd_channel_median
 
-def smooth_data(x_position, y_position, max_no_pings, pings_per_file, filepath, step, file_number):
-    if float.is_integer(max_no_pings/step):
-        number_of_rows = int(pings_per_file[file_number+1]/step) + 1
-    else:
-        number_of_rows = int(pings_per_file[file_number+1]/step) + 2
-    X_values_to_smooth = np.zeros((number_of_rows, 2))
-    Y_values_to_smooth = np.zeros((number_of_rows, 2))
+def smooth_data(x_position, y_position, max_no_pings, pings_per_file, step, file_number, gyro):
+    global heading
+    length = np.arange(0, int(pings_per_file[file_number+1]))
+    #window size = step, polynomial order = 3
+    smoothX = savgol_filter((x_position[:, file_number], length), step, 3)
+    smoothX = smoothX[0,:]
+    smoothY = savgol_filter((y_position[:, file_number], length), step, 3)
+    smoothY = smoothY[0,:]
     
-    for i in range(0, int(pings_per_file[file_number+1])):
-        if float.is_integer(i/step):
-            row_number = int(i/step)
-            ping_X = np.c_[x_position[i, file_number], i]
-            ping_Y = np.c_[y_position[i, file_number], i]
-            X_values_to_smooth[row_number, :] = ping_X
-            Y_values_to_smooth[row_number, :] = ping_Y
-    ping_X = np.c_[x_position[i, file_number], i]
-    ping_Y = np.c_[y_position[i, file_number], i]
-    X_values_to_smooth[row_number+1, :] = ping_X
-    Y_values_to_smooth[row_number+1, :] = ping_Y
-
-    interpolatorX = CubicSpline(X_values_to_smooth[:, 1], X_values_to_smooth[:,0])
-    interpolatorY = CubicSpline(Y_values_to_smooth[:, 1], Y_values_to_smooth[:,0])
-
-    smoothX = interpolatorX(np.arange(0, int(pings_per_file[file_number+1])))
-    smoothY = interpolatorY(np.arange(0, int(pings_per_file[file_number+1])))
-    x_y = (np.roll(smoothX, 1, axis=0) - smoothX) / (np.roll(smoothY, 1, axis=0) - smoothY)
-    x_y[0] = x_y[1]
-    heading = np.degrees(np.arctan(x_y))
-    head_index = np.argwhere(np.logical_and(np.roll(smoothX, 1, axis=0) - smoothX < 0, np.roll(smoothY, 1, axis=0) - smoothY > 0))
-    heading[head_index] = heading[head_index] + 360
-    head_index = np.argwhere(np.logical_and(np.roll(smoothX, 1, axis=0) - smoothX > 0, np.roll(smoothY, 1, axis=0) - smoothY < 0))
-    heading[head_index] = heading[head_index] + 180
-    head_index = np.argwhere(np.logical_and(np.roll(smoothX, 1, axis=0) - smoothX < 0, np.roll(smoothY, 1, axis=0) - smoothY < 0))
-    heading[head_index] = heading[head_index] + 180
-    heading[0] = heading[1]
+    heading = savgol_filter((gyro[:, file_number], length), step, 3)
+    heading = heading[0,:]
+    heading = heading.clip(min=0, max=360, out=heading)
+    heading = gyro[:, file_number]
+    
     factor_stbd_y = np.cos(np.radians(heading+90))
     factor_stbd_x = np.sin(np.radians(heading+90))
     factor_port_y = np.cos(np.radians(heading-90))
@@ -138,7 +208,6 @@ def bottom_track(swath, mean, N):
     first_value = np.zeros(len(swath))
     start = len(swath) // 2
     finish = len(swath) - 1
-    n = N // 2
     average = mean / 2
     for i in range(start, len(swath)):
         try:
@@ -153,85 +222,28 @@ def bottom_track(swath, mean, N):
         else:
             finish -= 1
     return first_value, value, finish
-
-def TVG_factors(ts):
-    factors = np.ones_like(ts)
-    factor = [[1,0]]
-    i=0
-    mean = np.mean(ts)
-    while i < len(ts):
-        try:
-            if ts[i+2] == 0:
-                pass
-            else:
-                factor.append([mean / (ts[i+2]), i+2])
-                factors[i+2] = mean / (ts[i+2])
-            i += 4
-        except IndexError:
-            factor.append([1,len(ts)-1])
-            break
+  
+def Automatic_Gain_Control(port_data, stbd_data, window_size, target_intensity):
+    data = np.append(port_data, stbd_data)
+    window = np.ones(window_size)
+    nonzeros = np.ones(data.shape[0])
+    nonzeros[np.argwhere(data == 0)] = 0
+    amplitudes = np.convolve(data, window, mode='same')
+    number_nonzeros = np.convolve(nonzeros, window, mode='same')
+    average = amplitudes / number_nonzeros
+    sclr = np.max(data) * target_intensity * 0.01 / average
+    data_corrected = sclr * data
     
-    for i, (value, index) in enumerate(factor):
-        try:
-            a1 = value
-            a2 = factor[i+1][0]
-            b1 = index
-            b2 = factor[i+1][1]
-            values = [a1, a2]
-            times = [b1, b2]
-            interpolator = CubicSpline(times, values)
-            for a in range(b1+1, b2):
-                factors[a] = interpolator(a)
-        except IndexError:
-            pass
-    return factors
+    return data_corrected
 
-def moving_window(data, window_length):
-    n = data.strides[0]
-    if data.size / window_length >= 2:
-        window_step = round(window_length / 5)
-        nrows = (data.size-window_length) // window_step + 1
-        window = np.lib.stride_tricks.as_strided(data,
-                                                 shape=(nrows, window_length),
-                                                 strides=(window_step*n,n))
-        window = np.vstack([window, data[data.size-window_length:]])
-    else:
-        if float.is_integer(data.size / window_length):
-            nrows = 1
-            window_step = 1
-            window = np.lib.stride_tricks.as_strided(data,
-                                                 shape=(nrows, window_length),
-                                                 strides=(window_step*n,n))
-        else:
-            nrows = 2
-            window_step = round((data.size / window_length - 1) * window_length)
-            int((data.size / window_length - 1) * window_length)
-            window = np.lib.stride_tricks.as_strided(data,
-                                                 shape=(nrows, window_length),
-                                                 strides=(window_step*n,n))
-    return window, window_step
-
-def Automatic_Gain_Control(data, window_size, average, first, last):
-    global local_average, analysis_window
-    correction = np.zeros(len(data))
-    analysis_window, step = moving_window(data[first:last], window_size)
-    for i, values in enumerate(analysis_window):
-        local_average = np.mean(values)
-        correction[first + i*step:first + window_size + step*i] = data[first + i*step:first + window_size + step*i] * average / local_average
-    upper_limit = np.percentile(data, 99.8)
-    correction.clip(0, upper_limit, out=correction)
-    return correction
-
-def Median_filter(data, window_size, average):
-    global median
+def Median_filter(port_data, stbd_data, window_size):
+    data = np.append(port_data, stbd_data)
+    average = np.mean(data)
     median = medfilt(data, kernel_size = window_size)
-    new_data = np.zeros_like(data)
-    factor = average / median
-    new_data = data * factor
-    new_data = np.nan_to_num(new_data)
-    upper_limit = np.percentile(data, 99.8)
-    new_data.clip(0, upper_limit, out=new_data)
-    return new_data
+    correction = median - average
+    data_corrected = data - correction
+    data_corrected.clip(0, np.max(data), out=data_corrected)
+    return data_corrected
 
 def Coordinate_calculator(y_value, x_value, Ymin, Xmin, Ymax, Xmax):#,df):
     y_coord = np.round(((Ymax+300)-y_value) / ((Ymax+300-(Ymin-300))/9999),0)
@@ -298,3 +310,23 @@ def Color_palette():
                   '#FEFC00']
     new_color_palette = ListedColormap(sns.color_palette(mstlbronze))
     return new_color_palette
+
+def SurfRough_attribute(data, window):
+    if window % 2 != 1 or window < 1:
+        raise TypeError("window_size size must be a positive odd number")
+    half_window = (window - 1) // 2
+    data_mean = np.asarray([data[:,i] - np.mean(data[:,i]) for i in range(data.shape[1])])
+    Ra = cumtrapz(abs(data_mean[:]), axis=1)
+    Ra = Ra / (data.shape[0] -1)
+    # Add padding at the beggining and end of the data
+    firstvals = Ra[0] - np.abs(Ra[1:half_window+1][::-1] - Ra[0])
+    lastvals = Ra[-1] + np.abs(Ra[-half_window-1:-1][::-1] - Ra[-1])
+    data = np.concatenate((firstvals, Ra, lastvals))
+    Ra_new = np.asarray([np.mean(Ra[i-half_window:i+half_window,data.shape[1]-1])
+                         for i in range(half_window, data.shape[0]- half_window)])
+
+    for i in range(data_mean.shape[0]-1):
+        lower = np.argwhere(data_mean[i, :] < Ra_new[i])#[i,1022])
+        data_mean[i, lower] = Ra_new[i]
+    
+    return data_mean
