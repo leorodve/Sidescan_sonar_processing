@@ -48,3 +48,5 @@ Here is a comparison of a section slant corrected (a) and the same section with 
 All kinds of contributions are welcomed.
 
 ## License
+
+All source code is licensed under a MIT license. 
