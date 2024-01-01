@@ -20,21 +20,31 @@ Many of the libraries required already come installed with the Anaconda distribu
 > [!NOTE]
 > The versions of the libraries were the ones used when writing and testing this tool, it may or not work for future versions.
 
-## Tutorial
+## Examples
 You will need to clone this repository to your computer, you can do so by running the following line in your console:
 
 ` git clone https://github.com/leorodve/Sidescan_sonar_processing `
 
-You can now run the 'main.py' file, after which you will be greeted with the welcoming window where you need to input some of the navigation and processing parameters or use the default values. You will also need to upload your side scan sonar files in this window.
+You can now run the 'main_file.py' file, after which you will be greeted with the welcoming window where you need to input some of the navigation and processing parameters or use the default values. You will also need to upload your side scan sonar files in this window.
 
 ![Screenshot of welcome window](https://imgur.com/fGjtPzL.png)
 
 If no errors are encountered, you will be able to visualize your data in bird-view.
 
-![Screenshot of welcome window](https://imgur.com/kYEXjL8.png)
+![Bird-view](https://imgur.com/kYEXjL8.png)
 
 And by clicking the 'Waterfall view' button you get to visualize your data in waterfall mode and change some of the display parameters, as well as apply a slant correction function. Once the data has been slant corrected, you can also apply two different types of gain.
 
-![Screenshot of welcome window](https://imgur.com/NYMzG23.png)
+![Waterfall view](https://imgur.com/NYMzG23.png)
 
-![Screenshot of welcome window](https://imgur.com/QpfS4QQ.png)
+![Waterfall view slant-corrected](https://imgur.com/QpfS4QQ.png)
+
+Here is a comparison of a section slant corrected (a) and the same section with an AGC gain applied (b)
+
+![Waterfall view AGC gain](https://imgur.com/SRj0fuD.png)
+
+## Contributing
+
+All kinds of contributions are welcomed.
+
+## License
