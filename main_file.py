@@ -77,9 +77,9 @@ def plot_data(window):
 def plot_waterfall(window, port_data, stbd_data, settings):
 
     my_colors = sss.Color_palette()
-    # color_values = np.arange(0, 2**16/2, 2**16/2/255)
-    color_values = np.arange(255)
-    file_name_with_ext = os.path.basename(filepath[0])
+    color_values = np.arange(0, 2**16/2, 2**16/2/255)
+    #color_values = np.arange(255)
+    file_name_with_ext = os.path.basename(filepath[file_number])
     file_name = os.path.splitext(file_name_with_ext)[0]
     figure = plt.figure(figsize=(12, 7), dpi=100)
     gs = gridspec.GridSpec(1, 2, wspace=0.0)
@@ -90,7 +90,7 @@ def plot_waterfall(window, port_data, stbd_data, settings):
     
     if settings[7] == "AGC":
         print("Calculating AGC")
-        data = np.asarray([sss.Automatic_Gain_Control(port_data[:,i,0], stbd_data[:,i,0], settings[8], settings[9]) for i in tqdm(range(int(pings_per_file[settings[10]+1,0])))]).T
+        data = np.asarray([sss.Automatic_Gain_Control(port_data[:,i,settings[10]], stbd_data[:,i,settings[10]], settings[8], settings[9]) for i in tqdm(range(int(pings_per_file[settings[10]+1,0])))]).T
         port_data = data[:1024, :]
         stbd_data = data[1024:, :]
         
@@ -99,7 +99,7 @@ def plot_waterfall(window, port_data, stbd_data, settings):
         
     if settings[7] == "MedFilt":
         print("Calculating MedFilt")
-        data = np.asarray([sss.Median_filter(port_data[:,i,0], stbd_data[:,i,0], settings[8]) for i in tqdm(range(int(pings_per_file[settings[10]+1,0])))]).T
+        data = np.asarray([sss.Median_filter(port_data[:,i,settings[10]], stbd_data[:,i,settings[10]], settings[8]) for i in tqdm(range(int(pings_per_file[settings[10]+1,0])))]).T
         port_data = data[:1024, :]
         stbd_data = data[1024:, :]
         
@@ -107,8 +107,8 @@ def plot_waterfall(window, port_data, stbd_data, settings):
         pos1 = ax2.imshow(stbd_data[:, settings[4]:settings[5]].T, cmap=my_colors, aspect='auto', vmin=np.percentile(color_values, settings[0]), vmax= np.percentile(color_values, settings[1]))
     
     if settings[7] == None:
-        pos = ax1.imshow(port_data[:,settings[4]:settings[5],0].T, cmap=my_colors, aspect='auto', vmin=np.percentile(color_values, settings[2]), vmax=np.percentile(color_values, settings[3]))
-        pos1 = ax2.imshow(stbd_data[:, settings[4]:settings[5],0].T, cmap=my_colors, aspect='auto', vmin=np.percentile(color_values, settings[0]), vmax= np.percentile(color_values, settings[1]))
+        pos = ax1.imshow(port_data[:,settings[4]:settings[5],settings[10]].T, cmap=my_colors, aspect='auto', vmin=np.percentile(color_values, settings[2]), vmax=np.percentile(color_values, settings[3]))
+        pos1 = ax2.imshow(stbd_data[:, settings[4]:settings[5],settings[10]].T, cmap=my_colors, aspect='auto', vmin=np.percentile(color_values, settings[0]), vmax= np.percentile(color_values, settings[1]))
 
     figure.colorbar(pos, ax=[ax1], location='left', pad=0.2)
     # ax1.set_xlabel('Port-side distance [m]')
@@ -190,7 +190,7 @@ def waterfall_window():
     mosaic_resolution = float(resolution_entry.get())
     ma.save_mosaic(high_res_grid, Xsmooth_utm, Ysmooth_utm, mosaic_resolution, filepath)
     display_settings = [stbd_min_ent, stbd_max_ent, port_min_ent, port_max_ent,
-                        first_ping_ent, last_ping_ent, 'no', None, 0, 0, 0]
+                        first_ping_ent, last_ping_ent, 'no', None, 0, 0, file_number]
     waterfall_plot = plot_waterfall(root, port_chan, stbd_chan, display_settings)
     waterfall_plot.get_tk_widget().grid(row=0, column=0, columnspan=4, rowspan=16)
     labels()
@@ -209,7 +209,7 @@ def correct_slant():
     first_ping_ent = first_ping_entry.get()
     last_ping_ent = last_ping_entry.get()
     display_settings = [stbd_min_ent, stbd_max_ent, port_min_ent, port_max_ent,
-                        first_ping_ent, last_ping_ent, 'yes', None, 0, 0, 0]
+                        first_ping_ent, last_ping_ent, 'yes', None, 0, 0, file_number]
     waterfall_plot = plot_waterfall(root, new_port_chan, new_stbd_chan, display_settings)
     waterfall_plot.get_tk_widget().grid(row=0, column=0, columnspan=4, rowspan=22)
     labels()
@@ -245,7 +245,7 @@ def display_AGC():
     intensity_ent = intensity_entry.get()
     display_settings = [stbd_min_ent, stbd_max_ent, port_min_ent, port_max_ent,
                         first_ping_ent, last_ping_ent, 'yes', 'AGC',
-                        window_size_ent, intensity_ent, 0]
+                        window_size_ent, intensity_ent, file_number]
     waterfall_plot = plot_waterfall(root, new_port_chan, new_stbd_chan, display_settings)
     waterfall_plot.get_tk_widget().grid(row=0, column=0, columnspan=4, rowspan=15)
     labels()
@@ -265,7 +265,7 @@ def display_MedFilt():
     window_size_ent = window_size_entry.get()
     display_settings = [stbd_min_ent, stbd_max_ent, port_min_ent, port_max_ent,
                         first_ping_ent, last_ping_ent, 'yes', 'MedFilt',
-                        window_size_ent, 0, 0]
+                        window_size_ent, 0, file_number]
     waterfall_plot = plot_waterfall(root, new_port_chan, new_stbd_chan, display_settings)
     waterfall_plot.get_tk_widget().grid(row=0, column=0, columnspan=4, rowspan=15)
     labels()
@@ -283,7 +283,7 @@ def display_again():
     first_ping_ent = first_ping_entry.get()
     last_ping_ent = last_ping_entry.get()
     display_settings = [stbd_min_ent, stbd_max_ent, port_min_ent, port_max_ent,
-                        first_ping_ent, last_ping_ent, 'yes', None, 0, 0, 0]
+                        first_ping_ent, last_ping_ent, 'yes', None, 0, 0, file_number]
     waterfall_plot = plot_waterfall(root, new_port_chan, new_stbd_chan, display_settings)
     waterfall_plot.get_tk_widget().grid(row=0, column=0, columnspan=4, rowspan=22)
     labels()
@@ -307,8 +307,24 @@ def display_again():
     
 # Display next file
 def display_next_file():
+    global file_number
     for widget in root.winfo_children():
         widget.destroy()
+    file_number += 1
+    stbd_min_ent = stbd_min_entry.get() 
+    stbd_max_ent = stbd_max_entry.get()
+    port_max_ent = port_max_entry.get()
+    port_min_ent = port_min_entry.get()
+    first_ping_ent = first_ping_entry.get()
+    last_ping_ent = last_ping_entry.get()
+    display_settings = [stbd_min_ent, stbd_max_ent, port_min_ent, port_max_ent,
+                        first_ping_ent, last_ping_ent, 'no', None, 0, 0, file_number]
+    waterfall_plot = plot_waterfall(root, port_chan, stbd_chan, display_settings)
+    waterfall_plot.get_tk_widget().grid(row=0, column=0, columnspan=4, rowspan=16)
+    labels()
+    ttk.Button(root, text="Slant-corrected", command=correct_slant).grid(column=5, row=13, columnspan=2)
+    ttk.Button(root, text="Plot next file", command=display_next_file).grid(column=5, row=14, columnspan=2)
+    ttk.Button(root, text="Save mosaic as geotiff", command=save_geotiff).grid(column=5, row=15, columnspan=2)
 
 def save_geotiff():
     mosaic_resolution = float(resolution_entry.get())
@@ -316,7 +332,7 @@ def save_geotiff():
 
 # Main function, for correcting and applying gains to the data, as well as plotting
 def display_data_window():
-    global filepath, np_chan1, port_chan, new_port_chan, resampling, port_chan_agc, port_chan_median, stbd_chan, new_stbd_chan, stbd_chan_agc, stbd_chan_median, utmX, utmY, sonar_data, pings_per_file, Xposition, Yposition, Xsmooth, Ysmooth, xy, utmX1, utmY1, factor_stbd_x1, factor_stbd_y1, factor_port_x1, factor_port_y1, Xsmooth_utm, Ysmooth_utm, lat, long, high_res_grid
+    global filepath, np_chan1, port_chan, new_port_chan, resampling, port_chan_agc, port_chan_median, stbd_chan, new_stbd_chan, stbd_chan_agc, stbd_chan_median, utmX, utmY, sonar_data, pings_per_file, Xposition, Yposition, Xsmooth, Ysmooth, xy, utmX1, utmY1, factor_stbd_x1, factor_stbd_y1, factor_port_x1, factor_port_y1, Xsmooth_utm, Ysmooth_utm, lat, long, high_res_grid, file_number
     # loop for cleaning the GUI window
     for widget in root.winfo_children():
         widget.destroy()
@@ -412,12 +428,21 @@ def display_data_window():
         
         #Matrix with port and starboard samples of all data
         sonar_data[:, :int(pings_per_file[file_number+1, 0]), file_number] = ping_sonar_data
-    
-    high_res_grid = ma.grid_data(Xsmooth_utm, Ysmooth_utm, utmX, utmY, sonar_data, int(pings_per_file[file_number+1, 0]), resampling, mosaic_resolution)
+
+    #Creating matrix for mosaic
+    utm_non_zeros = np.argwhere(utmX != 0)
+    X = np.arange(np.min(utmX[utm_non_zeros[:,0], utm_non_zeros[:,1], utm_non_zeros[:,2]])-100, np.max(utmX)+100, mosaic_resolution)
+    utm_non_zeros = np.argwhere(utmY != 0)
+    Y = np.arange(np.min(utmY[utm_non_zeros[:,0], utm_non_zeros[:,1], utm_non_zeros[:,2]])-100, np.max(utmY)+100, mosaic_resolution)
+    high_res_grid = np.zeros((len(Y),len(X)))
+    for file_number in range(len(filepath)):
+        high_res_grid += ma.grid_data(X, Y, utmX, utmY, sonar_data, int(pings_per_file[file_number+1, 0]), resampling, mosaic_resolution, file_number, filepath)
+        high_res_grid.clip(0, sonar_data.max(), out=high_res_grid)
         
     first_plot = plot_data(root, Xsmooth_utm, Ysmooth_utm)
     first_plot.get_tk_widget().grid(row=1, column=0)
 
+    file_number = 0
     ttk.Button(root, text="Waterfall view", command=waterfall_window).grid(column=0, row=0)
 
 
