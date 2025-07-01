@@ -5,7 +5,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib import gridspec
 import tkinter
-from tkinter import ttk, font
+from tkinter import ttk, font, filedialog
 from tqdm import tqdm
 import SSS_functions as sss
 import mosaic_to_geotiff as ma
