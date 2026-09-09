@@ -1,5 +1,5 @@
 # Side Scan Sonar processing and automatic interpreting tool
-This tool developed was originally developed as part of my master thesis research, now it has been improved with the help of AI.
+This tool was originally developed as part of my master thesis research, now it has been improved with the help of AI.
 
 It's divided in two part, the first one includes a basic GUI to allow the user to upload as many sonar files (for now, they must be in '.xtf' format) as he desires to process/visualize the data. The second part was written using jupyter notebooks, and it's designed to automatically clasify Side Scan Sonar mosaics into three different facies: ripples, not-ripples and transition zones (tiles that include ripple and non ripple areas), using amplitude and frequency attributes calculated from the input data. This second part it's also designed to do boulder detection on the mosaics and output a list of the detected boulders, including information of each item such as height, length, confidence level of detection, among many others parameters.
 
